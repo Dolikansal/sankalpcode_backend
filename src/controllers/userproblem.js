@@ -3,6 +3,7 @@ const problem = require("../models/problem");
 const user = require("../models/user");
 const submission = require("../models/submission");
 const mongoose = require('mongoose');
+const video = require("../models/editorial");
 const createproblem = async (req,res)=>{
 
     const {title,description,difficulty,tags,
@@ -153,23 +154,77 @@ const deleteproblem = async(req , res) =>{
     }
 }
 
-const getproblembyid = async(req , res)=>{
-    const {id} = req.params;
-    try{
-        if(!id){
+// const getproblembyid = async(req , res)=>{
+//     const {id} = req.params;
+//     try{
+//         if(!id){
+//             return res.status(400).json({ error: "Problem ID is required." });
+//         }
+//         const dsaproblem = await problem.findById(id).select("_id title description difficulty tags visibletestcase startcode referencesolution");
+//         if(!dsaproblem){
+//             return res.status(404).json({ error: "Problem not found with the provided ID." }); 
+//         }
+
+//         const videoData = await video.findOne({ problemid: id });
+
+//         if (videoData) {
+//             dsaproblem.secureurl = videoData.secureurl;
+//             dsaproblem.cloudnaryid = videoData.cloudnaryid;
+//             dsaproblem.thumbnail = videoData.thumbnail;
+//             dsaproblem.duration = videoData.duration;
+//         } else {
+//             dsaproblem.secureurl = null;
+//             dsaproblem.cloudnaryid = null;
+//             dsaproblem.thumbnail = null;
+//             dsaproblem.duration = null;
+//         }
+//         res.status(200).send(dsaproblem);
+//     }
+//     catch(err){
+//         console.log("❌ Controller Error:", err.message);
+//         res.status(500).json({ error: err.message });
+//     }
+// }
+
+const getproblembyid = async (req, res) => {
+    const { id } = req.params;
+    try {
+        if (!id) {
             return res.status(400).json({ error: "Problem ID is required." });
         }
-        const dsaproblem = await problem.findById(id).select("_id title description difficulty tags visibletestcase startcode referencesolution");
-        if(!dsaproblem){
-            return res.status(404).json({ error: "Problem not found with the provided ID." }); 
+
+        // ✅ .lean() lagane se plain JS object milega
+        const dsaproblem = await problem
+            .findById(id)
+            .select("_id title description difficulty tags visibletestcase startcode referencesolution editorial")
+            .lean();
+
+        if (!dsaproblem) {
+            return res.status(404).json({ error: "Problem not found with the provided ID." });
         }
-        res.status(200).send(dsaproblem);
-    }
-    catch(err){
+
+        const videoData = await video.findOne({ problemid: id });
+
+        if (videoData) {
+            dsaproblem.secureurl = videoData.secureurl;
+            dsaproblem.cloudnaryid = videoData.cloudnaryid;
+            dsaproblem.thumbnail = videoData.thumbnail;
+            dsaproblem.duration = videoData.duration;
+            dsaproblem.video = videoData; // Optional: pura video object bhi attach kar diya
+        } else {
+            dsaproblem.secureurl = null;
+            dsaproblem.cloudnaryid = null;
+            dsaproblem.thumbnail = null;
+            dsaproblem.duration = null;
+            dsaproblem.video = null;
+        }
+
+        return res.status(200).json(dsaproblem);
+    } catch (err) {
         console.log("❌ Controller Error:", err.message);
-        res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: err.message });
     }
-}
+};
 
 const getallproblem = async(req , res)=>{
     try{

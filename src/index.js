@@ -10,6 +10,7 @@ const submitrouter = require("./routes/submit");
 const hintRoutes = require('./routes/hintRoutes');
 const quizroute = require('./routes/quizRoutes');
 const instructorRouter = require('./routes/instructorRoute');
+const videorouter = require("./routes/video");
 const cors = require('cors');
 
 app.use(cors({
@@ -24,6 +25,7 @@ app.use("/submission" , submitrouter);
 app.use('/api/hints', hintRoutes);
 app.use('/api/quiz', quizroute);
 app.use("/api/instructor", instructorRouter);
+app.use("/video" ,videorouter);
 
 
 // const initializeredis = async () =>{
