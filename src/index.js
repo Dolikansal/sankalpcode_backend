@@ -14,7 +14,10 @@ const videorouter = require("./routes/video");
 const cors = require('cors');
 
 app.use(cors({
-    origin : 'http://localhost:5173',
+    origin: [
+        "https://sankalpcode-frontend-silk.vercel.app", // aapka live vercel link
+        "http://localhost:5173"                         // local testing ke liye
+    ],
     credentials : true
 }))
 app.use(express.json());
