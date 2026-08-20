@@ -32,7 +32,13 @@ const register = async (req, res) =>{
             _id : newuser._id,
             role : newuser.role,
         }
-        res.cookie('token' , token , {maxAge : 3600000});
+        // res.cookie('token' , token , {maxAge : 3600000});
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: true,
+            sameSite: "none",
+            maxAge: 3600000
+        });
         res.status(201).json({
             user:reply,
             message : "user registered sucessfully",
@@ -75,7 +81,13 @@ const login = async (req, res) =>{
             role : newuser.role,
         }
         const token = jwt.sign({id:newuser.id , email:email , role :newuser.role} , process.env.JWT_KEY , {expiresIn : '1h'});
-        res.cookie('token' , token , {maxAge : 3600000});
+        // res.cookie('token' , token , {maxAge : 3600000});
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: true,
+            sameSite: "none",
+            maxAge: 3600000
+        });
 
         res.status(200).json({
             user:reply,
