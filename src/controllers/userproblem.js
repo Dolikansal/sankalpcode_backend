@@ -5,7 +5,7 @@ const submission = require("../models/submission");
 const mongoose = require('mongoose');
 const video = require("../models/editorial");
 const createproblem = async (req,res)=>{
-
+    console.log("🚀 CONTROLLER REACHED! Body:", req.body?.title);
     const {title,description,difficulty,tags,
         visibletestcase,hiddentestcase,startcode,
         referencesolution, problemcreator
@@ -18,7 +18,7 @@ const createproblem = async (req,res)=>{
             throw new Error("visibletestcase field is missing or not an array");
         }
       for(const {language,completecode} of referencesolution){
-         
+        if (!completecode || completecode.trim() === '') continue;
         const languageId = getlanguagebyid(language);
         
         const submissions = visibletestcase.map((testcase) => ({
@@ -55,16 +55,16 @@ const createproblem = async (req,res)=>{
 
       // We can store it in our DB
 
-    const userProblem =  await problem.create({
+      const userProblem = await problem.create({
         ...req.body,
-        // problemcreator: req.result?._id || req.body.problemcreator
-        problemcreator: req.result?._id || "654321abcdef1234567890ab"
-      });
+        problemcreator: req.result?._id || req.body.problemcreator || "6a77303635231ae0f87c5879"
+    });
 
       res.status(201).send("Problem Saved Successfully");
     }
-    catch(err){
-        console.log("Submit Error Detail:", err.response?.data || err.message);
+    catch (err) {
+        console.log("❌ EXACT JUDGE0 ERROR:", err.response?.status, err.response?.data || err.message);
+        return res.status(500).json({ error: err.response?.data || err.message });
     }
 }
 

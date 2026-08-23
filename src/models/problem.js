@@ -77,7 +77,7 @@ const problemschema = new Schema({
 
     problemcreator :{
         type: Schema.Types.ObjectId,
-        required:true,
+        required:false,
         ref:"user"
     }
 })
