@@ -286,4 +286,26 @@ const getsubmittedproblem = async(req , res) =>{
         res.status(500).json({ error: err.message });
     }
 }
-module.exports = {createproblem , updateproblem , deleteproblem , getproblembyid , getallproblem , solvedprobelmbyuser ,getsubmittedproblem};
+
+const gettopicstats = async (req, res) => {
+    try {
+        const stats = await problem.aggregate([
+            { $unwind: "$tags" },
+            { 
+                $group: { 
+                    _id: "$tags", 
+                    count: { $sum: 1 } 
+                } 
+            },
+            { $sort: { count: -1 } }
+        ]);
+
+        return res.status(200).json(stats);
+    } catch (err) {
+        console.log("❌ Controller Error:", err.message);
+        return res.status(500).json({ error: err.message });
+    }
+};
+
+
+module.exports = {createproblem , updateproblem , deleteproblem , getproblembyid , getallproblem , solvedprobelmbyuser ,getsubmittedproblem , gettopicstats};

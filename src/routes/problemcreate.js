@@ -2,7 +2,7 @@ const express = require('express');
 // const mongoose = require('mongoose');
 const adminmiddleware = require('../middleware/adminmiddleware');
 const usermiddleware = require('../middleware/usermiddleware'); 
-const {createproblem , updateproblem , deleteproblem , getproblembyid , getallproblem,solvedprobelmbyuser,getsubmittedproblem } = require("../controllers/userproblem");
+const {createproblem , updateproblem , deleteproblem , getproblembyid , getallproblem,solvedprobelmbyuser,getsubmittedproblem ,gettopicstats} = require("../controllers/userproblem");
 const problemroute = express.Router();
 
 
@@ -13,5 +13,6 @@ problemroute.get("/problemById/:id",usermiddleware , getproblembyid);
 problemroute.get("/getallproblems",usermiddleware , getallproblem);
 problemroute.get("/problemsolvedbyuser",usermiddleware , solvedprobelmbyuser);
 problemroute.get("/submittedproblem/:id" , usermiddleware , getsubmittedproblem);
+problemroute.get("/topic-stats", gettopicstats);
 
 module.exports = problemroute;
