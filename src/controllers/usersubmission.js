@@ -1,5 +1,6 @@
 const problemmodel = require('../models/problem');
 const submission = require('../models/submission');
+const user = require('../models/user');
 const {getlanguagebyid , submitbatch ,submittoken} = require('../utils/problemutility');
 const submitcode = async(req , res)=>{
     try{
@@ -28,49 +29,11 @@ const submitcode = async(req , res)=>{
 
         const languageid = getlanguagebyid(language);
         console.log("Debug - Language Name:", language, "ID Found:", languageid);
-        // const submissions = problem.hiddentestcase.map((test) => {
-        //     // Code ko safely string mein badalne ke liye
-        //     const escapedCode = JSON.stringify(completecode);
-        
-        //     const wrappedCode = `
-        // const code = ${escapedCode};
-        // eval(code); // Code ko execute karke function define karo
-        
-        // try {
-        //     const inputData = JSON.parse(\`${test.input}\`);
-            
-        //     // Regex jo har tarah ke function name ko dhoond lega
-        //     const match = code.match(/function\\s+([a-zA-Z0-9_]+)/);
-        //     if (!match) throw new Error("Function name not found");
-        //     const functionName = match[1];
-            
-        //     let result;
-        //     if (Array.isArray(inputData)) {
-        //         result = eval(functionName)(...inputData);
-        //     } else {
-        //         result = eval(functionName)(inputData);
-        //     }
-            
-        //     process.stdout.write(JSON.stringify(result));
-        // } catch (e) {
-        //     process.stderr.write(e.message);
-        //     process.exit(1);
-        // }
-        // `;
-        
-        //     return {
-        //         source_code: code,
-        //         language_id: languageid,
-        //         stdin: "", 
-        //         expected_output: String(test.output), // Output ko string bana do matching ke liye
-        //     };
-        // });
         if (!languageid) {
             return res.status(400).json({ message: "Invalid Language selected" });
         }
         const submissions = foundProblem.hiddentestcase.map((testcase) => ({
-            // Base64 encoding ensure karegi ki code crash na ho
-            // source_code: Buffer.from(completecode).toString('base64'),
+
             source_code: Buffer.from(code).toString('base64'),
             language_id: languageid,
             stdin: Buffer.from(testcase.input).toString('base64'),
@@ -93,13 +56,13 @@ const submitcode = async(req , res)=>{
           for(const test of testresult){
             const currentStatusId = test.status?.id || test.status_id;
             console.log(currentStatusId)
-            if(test.status_id === 3){ // Accepted 
+            if(currentStatusId === 3){ // Accepted 
                 testcasespassed++;
-                runtime = runtime + parseFloat(test.time);
-                memory = Math.max(memory , test.memory);
+                runtime = runtime + parseFloat(test.time) || 0;
+                memory = Math.max(memory , test.memory) || 0;
             }
             else{
-                if(test.status_id === 4){
+                if(currentStatusId === 4){
                     status = 'error'; 
                     errormessage = test.stderr;
                 }
@@ -118,13 +81,55 @@ const submitcode = async(req , res)=>{
 
           await submissionresult.save();
 
-          if(!req.result.problemsolved.includes(problemid)){
-            req.result.problemsolved.push(problemid);
-            await req.result.save();
-          }
+          let isFirstSolve = false;
+        let scoreAwarded = 0;
+        //   if(!req.result.problemsolved.includes(problemid)){
+        //     req.result.problemsolved.push(problemid);
+        //     await req.result.save();
+        //   }
 
 
-          res.status(201).send(submissionresult);
+        //   res.status(201).send(submissionresult);
+        if (status === 'accepted') {
+            const userSolvedList = req.result.problemsolved || [];
+            const alreadySolved = userSolvedList.some(
+                (id) => id.toString() === problemid.toString()
+            );
+
+            if (!alreadySolved) {
+                isFirstSolve = true;
+                scoreAwarded = foundProblem.score ?? 5;
+
+                // User Model ko direct DB update karein
+                const updatedUser = await user.findByIdAndUpdate(
+                    userid,
+                    {
+                        $addToSet: { problemsolved: problemid },
+                        $inc: { score: scoreAwarded }
+                    },
+                    { new: true }
+                );
+
+                if (updatedUser) {
+                    req.result.score = updatedUser.score;
+                }
+            }
+        }
+        // ================= SCORE LOGIC END ===================
+
+        // Response me extra score info bhej di taaki frontend toasty/modal show kar sake
+        res.status(201).json({
+            status: submissionresult.status,
+    runtime: submissionresult.runtime,
+    memory: submissionresult.memory,
+    totalTestCases: foundProblem.hiddentestcase.length,
+    passedCount: testcasespassed,
+    errorMessage: errormessage,
+    isFirstSolve,
+    scoreAwarded,
+    totalScore: req.result.score,
+    submission: submissionresult
+        });
     }
     catch(err){
         console.log(err);

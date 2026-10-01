@@ -42,11 +42,16 @@ const userschema = new Schema({
          type : String,
          required : true,
      },
+     mobile: { type: String, default: "" },
      location: { type: String, default: "" },
     systemObjective: { type: String, default: "" },
     education: { type: String, default: "" },
     skills: { type: [String], default: [] },
-    achievements: { type: [String], default: [] }
+    achievements: { type: [String], default: [] },
+    score:{
+        type : Number,
+        default : 0,
+    },
 }
 ,{
     timestamps : true,

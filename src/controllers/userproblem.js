@@ -8,7 +8,7 @@ const createproblem = async (req,res)=>{
     console.log("🚀 CONTROLLER REACHED! Body:", req.body?.title);
     const {title,description,difficulty,tags,
         visibletestcase,hiddentestcase,startcode,
-        referencesolution, problemcreator
+        referencesolution, problemcreator , score
     } = req.body;
 
 
@@ -51,12 +51,13 @@ const createproblem = async (req,res)=>{
        }
 
       }
-
+      const problemScore = score !== undefined && score !== null && score !== '' ? Number(score) : 5;
 
       // We can store it in our DB
 
       const userProblem = await problem.create({
         ...req.body,
+        score: problemScore,
         problemcreator: req.result?._id || req.body.problemcreator || "6a77303635231ae0f87c5879"
     });
 
@@ -72,7 +73,7 @@ const updateproblem = async(req , res) =>{
 
     const {id} = req.params;
     const {title , description , difficulty , tags , visibletestcase , 
-        hiddentestcase , startcode , referencesolution, problemcreator
+        hiddentestcase , startcode , referencesolution, problemcreator , score
     } = req.body;
 
     try{
@@ -126,8 +127,9 @@ const updateproblem = async(req , res) =>{
                 }
               }
             }
+            const problemScore = score !== undefined && score !== null && score !== '' ? Number(score) : 5;
 
-        const newproblem = await problem.findByIdAndUpdate(id , {...req.body} , {runValidators:true , new:true});
+        const newproblem = await problem.findByIdAndUpdate(id , {...req.body ,  score: problemScore} , {runValidators:true , new:true});
         res.status(200).send(newproblem);
     }
     catch(err){
@@ -196,7 +198,7 @@ const getproblembyid = async (req, res) => {
         // ✅ .lean() lagane se plain JS object milega
         const dsaproblem = await problem
             .findById(id)
-            .select("_id title description difficulty tags visibletestcase startcode referencesolution editorial")
+            .select("_id title description difficulty tags visibletestcase startcode referencesolution editorial score")
             .lean();
 
         if (!dsaproblem) {

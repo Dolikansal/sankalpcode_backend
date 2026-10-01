@@ -79,6 +79,12 @@ const problemschema = new Schema({
         type: Schema.Types.ObjectId,
         required:false,
         ref:"user"
+    },
+
+    score:{
+        type:Number,
+        required:true,
+        default:5
     }
 })
 

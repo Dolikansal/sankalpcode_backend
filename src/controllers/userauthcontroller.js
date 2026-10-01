@@ -183,7 +183,9 @@ const getprofile = async (req, res) => {
             skills: currentuser.skills || [],
             problemsolved: currentuser.problemsolved || [],
             education: currentuser.education || "Not Specified",
-            achievements: currentuser.achievements || []
+            achievements: currentuser.achievements || [],
+            mobile : currentuser.mobile || "Not Specified",
+            score: currentuser.score || 0
         });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -193,7 +195,7 @@ const getprofile = async (req, res) => {
 const updateprofile = async (req, res) => {
     try {
         const userid = req.result ? req.result._id : req.user.id;
-        const { location, systemObjective, skills, education, achievements } = req.body;
+        const { location, systemObjective, skills, education, achievements , mobile } = req.body;
 
         const updateduser = await user.findByIdAndUpdate(
             userid,
@@ -203,7 +205,8 @@ const updateprofile = async (req, res) => {
                     systemObjective,
                     skills, // Array expected from client
                     education,
-                    achievements // Array expected from client
+                    achievements, // Array expected from client
+                    mobile
                 }
             },
             { new: true, runValidators: true }
