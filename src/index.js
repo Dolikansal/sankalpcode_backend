@@ -41,11 +41,14 @@ app.use("/video" ,videorouter);
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-      origin: process.env.CLIENT_URL || "http://localhost:5173", // Aapka React Frontend URL (Vercel ya Localhost)
+        origin: [
+            "https://sankalpcode-frontend-silk.vercel.app", // aapka live vercel link
+            "http://localhost:5173"                         // local testing ke liye
+        ], // Jo bhi available ho sabko allow kar dega
       methods: ["GET", "POST"],
       credentials: true
     }
-  });
+});
   io.on('connection', (socket) => {
     console.log(`⚡ Socket Connected: ${socket.id}`);
   
