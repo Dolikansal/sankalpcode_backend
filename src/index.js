@@ -12,6 +12,9 @@ const quizroute = require('./routes/quizRoutes');
 const instructorRouter = require('./routes/instructorRoute');
 const videorouter = require("./routes/video");
 const cors = require('cors');
+const http = require('http'); // Node.js built-in HTTP module
+const { Server } = require('socket.io');
+const registerBattleHandlers = require('../src/socket/battlesocket');
 
 app.use(cors({
     origin: [
@@ -35,7 +38,24 @@ app.use('/api/hints', hintRoutes);
 app.use('/api/quiz', quizroute);
 app.use("/api/instructor", instructorRouter);
 app.use("/video" ,videorouter);
-
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+      origin: process.env.CLIENT_URL || "http://localhost:5173", // Aapka React Frontend URL (Vercel ya Localhost)
+      methods: ["GET", "POST"],
+      credentials: true
+    }
+  });
+  io.on('connection', (socket) => {
+    console.log(`⚡ Socket Connected: ${socket.id}`);
+  
+    // Gamification 1v1 Battle socket events register karo
+    registerBattleHandlers(io, socket);
+  
+    socket.on('disconnect', () => {
+      console.log(`❌ Socket Disconnected: ${socket.id}`);
+    });
+  });
 
 const initializeredis = async () => {
     try {
@@ -44,7 +64,7 @@ const initializeredis = async () => {
         console.log('✅ Connected to MongoDB successfully');
 
         // Start the server immediately after DB is ready
-        app.listen(process.env.PORT || 3001, () => {
+        server.listen(process.env.PORT || 3001, () => {
             console.log('🚀 Server is running on port 3001');
         });
 
