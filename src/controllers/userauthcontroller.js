@@ -23,6 +23,7 @@ const register = async (req, res) =>{
             email,
             password: hashedPassword,
             role: "user",
+            score: 0,
             problemsolved: [] // Forcefully ise empty array set kar do signup pe
         });
         const token = jwt.sign({id:newuser._id , email:email , role : "user"} , process.env.JWT_KEY , {expiresIn : '1h'});
@@ -31,6 +32,7 @@ const register = async (req, res) =>{
             email : newuser.email,
             _id : newuser._id,
             role : newuser.role,
+            score : newuser.score ?? 0,
         }
         // res.cookie('token' , token , {maxAge : 3600000});
         res.cookie('token', token, {
@@ -68,7 +70,9 @@ const login = async (req, res) =>{
         }
 
         const newuser = await user.findOne({email : email});
-
+        if (!newuser) {
+            return res.status(400).json({ success: false, message: "Invalid credentials" });
+        }
         const match = await bcrypt.compare(password ,newuser.password);
         if(!match){
             throw new Error("Invalid credentials");
@@ -79,8 +83,9 @@ const login = async (req, res) =>{
             email : newuser.email,
             _id : newuser._id,
             role : newuser.role,
+            score : newuser.score ?? 0,
         }
-        const token = jwt.sign({id:newuser.id , email:email , role :newuser.role} , process.env.JWT_KEY , {expiresIn : '1h'});
+        const token = jwt.sign({id:newuser.id , email:email , role :newuser.role , firstname: newuser.firstname,score: newuser.score ?? 0} , process.env.JWT_KEY , {expiresIn : '1h'});
         // res.cookie('token' , token , {maxAge : 3600000});
         res.cookie('token', token, {
             httpOnly: true,
@@ -110,8 +115,8 @@ const logout = async (req , res) =>{
         const {token} = req.cookies;
 
         const payload = jwt.decode(token);
-        await redisclient.set(`token : ${token}`  , 'blocked' )
-        await redisclient.expireAt(`token : ${token} `,  payload.exp);
+        await redisclient.set(`token:${token}`,'blocked' )
+        await redisclient.expireAt(`token:${token}`, payload.exp);
 
         res.cookie("token" , null , {expires:new Date(Date.now())});
 
@@ -134,7 +139,7 @@ const adminregister = async(req , res) => {
         
         req.body.password = await bcrypt.hash(password, 10);
         const newuser = await user.create(req.body);
-        const token = jwt.sign({id:newuser.id , email:email , role : newuser.role} , process.env.JWT_KEY , {expiresIn : '1h'});
+        const token = jwt.sign({id:newuser.id , email:email , role : newuser.role , score: newuser.score ?? 0} , process.env.JWT_KEY , {expiresIn : '1h'});
         res.cookie('token' , token , {maxAge : 3600000});
         res.status(201).send("admin registered sucessfully"); 
 
@@ -175,6 +180,8 @@ const getprofile = async (req, res) => {
         }
 
         res.status(200).json({
+            _id: currentuser._id,
+            firstname: currentuser.firstname,
             name: currentuser.firstname,
             email: currentuser.email,
             role: currentuser.role,
@@ -185,7 +192,7 @@ const getprofile = async (req, res) => {
             education: currentuser.education || "Not Specified",
             achievements: currentuser.achievements || [],
             mobile : currentuser.mobile || "Not Specified",
-            score: currentuser.score || 0
+            score: currentuser.score ?? 0
         });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });

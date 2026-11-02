@@ -1,13 +1,15 @@
 const problemmodel = require('../models/problem');
 const submission = require('../models/submission');
 const user = require('../models/user');
+const Room = require('../models/battle');
 const {getlanguagebyid , submitbatch ,submittoken} = require('../utils/problemutility');
+const { getRoom, updateRoom, removeRoom } = require('../utils/battleroom');
 const submitcode = async(req , res)=>{
     try{
         const userid = req.result._id;
         const problemid = req.params.id;
 
-        const {code , language} = req.body;
+        const {code, language, isBattle, roomCode} = req.body; // 👈 roomCode aur isBattle destructure kiya
 
         if(!userid || !problemid || !code || !language){
             return res.status(400).json({message: "Missing required fields"});
@@ -23,7 +25,6 @@ const submitcode = async(req , res)=>{
             code,
             language,
             status: 'pending',
-            // testCasesPassed : 0,
             hiddencasetotal : foundProblem.hiddentestcase.length
         })
 
@@ -33,7 +34,6 @@ const submitcode = async(req , res)=>{
             return res.status(400).json({ message: "Invalid Language selected" });
         }
         const submissions = foundProblem.hiddentestcase.map((testcase) => ({
-
             source_code: Buffer.from(code).toString('base64'),
             language_id: languageid,
             stdin: Buffer.from(testcase.input).toString('base64'),
@@ -83,56 +83,90 @@ const submitcode = async(req , res)=>{
 
           let isFirstSolve = false;
         let scoreAwarded = 0;
-        //   if(!req.result.problemsolved.includes(problemid)){
-        //     req.result.problemsolved.push(problemid);
-        //     await req.result.save();
-        //   }
 
-
-        //   res.status(201).send(submissionresult);
+        // ================= SCORE & BATTLE LOGIC ===================
         if (status === 'accepted') {
-            const userSolvedList = req.result.problemsolved || [];
-            const alreadySolved = userSolvedList.some(
-                (id) => id.toString() === problemid.toString()
-            );
+            if (isBattle && roomCode) {
+                // 🚀 BATTLE MODE: Bet amount handle karein (Winner ko +bet, Loser ko -bet)
+                const room = await getRoom(roomCode);
+                if (room && room.status !== 'COMPLETED') {
+                    room.status = 'COMPLETED';
+                    await updateRoom(room);
 
-            if (!alreadySolved) {
-                isFirstSolve = true;
-                scoreAwarded = foundProblem.score ?? 5;
+                    const betAmount = Number(room.betAmount) || 10;
+                    const winnerId = String(userid);
+                    
+                    const hostId = String(room.host?.userId || room.host?._id);
+                    const guestId = room.guest ? String(room.guest?.userId || room.guest?._id) : null;
+                    const loserId = hostId === winnerId ? guestId : hostId;
 
-                // User Model ko direct DB update karein
-                const updatedUser = await user.findByIdAndUpdate(
-                    userid,
-                    {
-                        $addToSet: { problemsolved: problemid },
-                        $inc: { score: scoreAwarded }
-                    },
-                    { new: true }
+                    if (loserId) {
+                        // Winner score increase & Loser score decrease atomically
+                        await user.findByIdAndUpdate(winnerId, {
+                            $inc: { score: betAmount, "stats.battlesWon": 1, "stats.battlesPlayed": 1 }
+                        });
+                        await user.findByIdAndUpdate(loserId, {
+                            $inc: { score: -betAmount, "stats.battlesLost": 1, "stats.battlesPlayed": 1 }
+                        });
+
+                        // MongoDB Battle document update agar maintain karte hain
+                        if (room._id || room.id) {
+                            await Room.findByIdAndUpdate(room._id || room.id, {
+                                status: "COMPLETED",
+                                winner: winnerId,
+                                endedAt: Date.now()
+                            }).catch(() => {});
+                        }
+
+                        console.log(`🏆 Battle API Win -> Winner: ${winnerId} (+${betAmount}), Loser: ${loserId} (-${betAmount})`);
+                        
+                        // Redis Room cleanup
+                        await removeRoom(roomCode);
+                    }
+                }
+            } else {
+                // 📝 NORMAL PRACTICE MODE: Default problem score add karein
+                const userSolvedList = req.result.problemsolved || [];
+                const alreadySolved = userSolvedList.some(
+                    (id) => id.toString() === problemid.toString()
                 );
 
-                if (updatedUser) {
-                    req.result.score = updatedUser.score;
+                if (!alreadySolved) {
+                    isFirstSolve = true;
+                    scoreAwarded = foundProblem.score ?? 5;
+
+                    const updatedUser = await user.findByIdAndUpdate(
+                        userid,
+                        {
+                            $addToSet: { problemsolved: problemid },
+                            $inc: { score: scoreAwarded }
+                        },
+                        { returnDocument: 'after' }
+                    );
+
+                    if (updatedUser) {
+                        req.result.score = updatedUser.score;
+                    }
                 }
             }
         }
         // ================= SCORE LOGIC END ===================
 
-        // Response me extra score info bhej di taaki frontend toasty/modal show kar sake
         res.status(201).json({
             status: submissionresult.status,
-    runtime: submissionresult.runtime,
-    memory: submissionresult.memory,
-    totalTestCases: foundProblem.hiddentestcase.length,
-    passedCount: testcasespassed,
-    errorMessage: errormessage,
-    isFirstSolve,
-    scoreAwarded,
-    totalScore: req.result.score,
-    submission: submissionresult
+            runtime: submissionresult.runtime,
+            memory: submissionresult.memory,
+            totalTestCases: foundProblem.hiddentestcase.length,
+            passedCount: testcasespassed,
+            errorMessage: errormessage,
+            isFirstSolve,
+            scoreAwarded,
+            totalScore: req.result.score,
+            submission: submissionresult
         });
     }
     catch(err){
-        console.log(err);
+        console.log("Error in submitcode:", err);
         res.status(500).json({message: "Internal Server Error"});
     }
 }

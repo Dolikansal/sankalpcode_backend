@@ -156,38 +156,6 @@ const deleteproblem = async(req , res) =>{
     }
 }
 
-// const getproblembyid = async(req , res)=>{
-//     const {id} = req.params;
-//     try{
-//         if(!id){
-//             return res.status(400).json({ error: "Problem ID is required." });
-//         }
-//         const dsaproblem = await problem.findById(id).select("_id title description difficulty tags visibletestcase startcode referencesolution");
-//         if(!dsaproblem){
-//             return res.status(404).json({ error: "Problem not found with the provided ID." }); 
-//         }
-
-//         const videoData = await video.findOne({ problemid: id });
-
-//         if (videoData) {
-//             dsaproblem.secureurl = videoData.secureurl;
-//             dsaproblem.cloudnaryid = videoData.cloudnaryid;
-//             dsaproblem.thumbnail = videoData.thumbnail;
-//             dsaproblem.duration = videoData.duration;
-//         } else {
-//             dsaproblem.secureurl = null;
-//             dsaproblem.cloudnaryid = null;
-//             dsaproblem.thumbnail = null;
-//             dsaproblem.duration = null;
-//         }
-//         res.status(200).send(dsaproblem);
-//     }
-//     catch(err){
-//         console.log("❌ Controller Error:", err.message);
-//         res.status(500).json({ error: err.message });
-//     }
-// }
-
 const getproblembyid = async (req, res) => {
     const { id } = req.params;
     try {

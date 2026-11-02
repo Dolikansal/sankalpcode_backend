@@ -23,7 +23,8 @@ router.get("/check" , usermiddleware , (req ,res)=>{
         firstname : req.result.firstname,
         email : req.result.email,
         _id : req.result._id,
-        role: req.result.role
+        role: req.result.role,
+        score: req.result.score ?? 0,
     }
 
     res.status(201).json({

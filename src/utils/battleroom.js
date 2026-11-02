@@ -1,5 +1,6 @@
 const redisClient = require('../config/redis');
-
+const User = require('../models/user');   
+const Room = require('../models/battle');
 const ROOM_TTL_SECONDS = 1800; // Room automatically 30 minutes me expire ho jayega
 const generateRoomCode = () => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -66,7 +67,7 @@ const joinRoom = async (roomCode, guestUser) => {
   }
 
   // Bet points balance check
-  if (guestUser.points < room.betAmount) {
+  if (guestUser.score < room.betAmount) {
     return { error: `Insufficient points! You need at least ${room.betAmount} points.` };
   }
 
@@ -74,7 +75,7 @@ const joinRoom = async (roomCode, guestUser) => {
   room.guest = {
     userId: guestUser._id.toString(),
     username: guestUser.firstname,
-    points: guestUser.points,
+    score: guestUser.score,
     socketId: null,
     isReady: false
   };
@@ -99,10 +100,53 @@ const removeRoom = async (roomCode) => {
   await redisClient.del(key);
 };
 
+const handleBattleEnd = async (roomId, winnerId, loserId, betAmount) => {
+  try {
+    const numBet = Number(betAmount);
+    if (isNaN(numBet) || numBet <= 0) {
+      console.error("❌ Invalid bet amount:", betAmount);
+      return;
+    }
+
+    if (!winnerId || !loserId || winnerId === 'undefined' || loserId === 'undefined') {
+      console.error("❌ Missing Winner or Loser ID!", { winnerId, loserId });
+      return;
+    }
+
+    console.log(`🏆 Battle End -> Winner: ${winnerId} (+${numBet}), Loser: ${loserId} (-${numBet})`);
+
+    // 1. Winner update
+    const updatedWinner = await User.findByIdAndUpdate(
+      winnerId,
+      { $inc: { score: numBet, "stats.battlesWon": 1, "stats.battlesPlayed": 1 } },
+      { returnDocument: 'after' }
+    );
+
+    // 2. Loser update (Check if loser exists)
+    const updatedLoser = await User.findByIdAndUpdate(
+      loserId,
+      { $inc: { score: -numBet, "stats.battlesLost": 1, "stats.battlesPlayed": 1 } },
+      { returnDocument: 'after' }
+    );
+
+    // 3. Room status update
+    await Room.findByIdAndUpdate(roomId, {
+      status: "COMPLETED",
+      winner: winnerId,
+      endedAt: Date.now()
+    });
+
+    console.log(`✅ Scores updated! Winner New Score: ${updatedWinner?.score}, Loser New Score: ${updatedLoser?.score}`);
+
+  } catch (error) {
+    console.error("❌ Error in handleBattleEnd execution:", error);
+  }
+};
 module.exports = {
   createRoom,
   getRoom,
   joinRoom,
   updateRoom,
-  removeRoom
+  removeRoom,
+  handleBattleEnd
 };

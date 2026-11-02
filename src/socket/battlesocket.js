@@ -2,7 +2,7 @@ const Battle = require('../models/battle');
 const User = require('../models/user');       // Ensure filename matches user.js
 const Problem = require('../models/problem'); // Ensure filename matches problem.js
 const redisClient = require('../config/redis');
-const { createRoom, getRoom, joinRoom, updateRoom, removeRoom } = require('../utils/battleroom');
+const { createRoom, getRoom, joinRoom, updateRoom, removeRoom , handleBattleEnd } = require('../utils/battleroom');
 
 module.exports = (io, socket) => {
 
@@ -36,26 +36,28 @@ module.exports = (io, socket) => {
     }
   };
 
-  // 1. CREATE ROOM
   socket.on('create_room', async ({ user, betAmount }) => {
     try {
       const uId = user?.userId || user?._id;
       if (!uId) {
         return socket.emit('error_message', 'Invalid user session.');
       }
-
+  
       const dbUser = await User.findById(uId);
-      if (!dbUser || dbUser.points < betAmount) {
-        return socket.emit('error_message', 'Bet lagane ke liye Sufficient Coins/Points nahi hain!');
+      
+      // Strict backend validation check
+      if (!dbUser || dbUser.score < betAmount) {
+        const currentScore = dbUser ? dbUser.score : 0;
+        return socket.emit('error_message', `Insufficient coins! Aapke paas sirf ${currentScore} coins hain.`);
       }
-
+  
       const room = await createRoom(dbUser, betAmount);
       room.host.socketId = socket.id;
       await updateRoom(room);
-
+  
       socket.join(room.roomCode);
       socket.emit('room_created', room);
-      console.log(`🎮 Room Created: ${room.roomCode} by ${dbUser.firstname}`);
+      console.log(`🎮 Room Created: ${room.roomCode} by ${dbUser.firstname} with bet ${betAmount}`);
     } catch (err) {
       console.error('Error creating room:', err);
       socket.emit('error_message', 'Room create karne mein problem hui!');
@@ -63,43 +65,74 @@ module.exports = (io, socket) => {
   });
 
   // 2. JOIN ROOM
-  socket.on('join_room', async ({ roomCode, user }) => {
-    try {
-      const uId = user?.userId || user?._id;
-      if (!uId) {
-        return socket.emit('error_message', 'Invalid user session.');
-      }
-
-      const dbUser = await User.findById(uId);
-      if (!dbUser) {
-        return socket.emit('error_message', 'User account not found.');
-      }
-
-      const result = await joinRoom(roomCode, dbUser);
-
-      if (result.error) {
-        return socket.emit('error_message', result.error);
-      }
-
-      const room = result.room;
-
-      // Update active socket ID for host or guest
-      if (String(room.host?.userId || room.host?._id) === String(uId)) {
-        room.host.socketId = socket.id;
-      } else if (room.guest) {
-        room.guest.socketId = socket.id;
-      }
-
-      await updateRoom(room);
-
-      socket.join(room.roomCode);
-      io.to(room.roomCode).emit('player_joined', room);
-      console.log(`👤 User ${dbUser.firstname} joined room: ${room.roomCode}`);
-    } catch (err) {
-      console.error('Error joining room:', err);
-      socket.emit('error_message', 'Room join karne mein issue aaya!');
+// 2. JOIN ROOM
+socket.on('join_room', async ({ roomCode, user }) => {
+  console.log("🔥 BACKEND RECEIVED join_room EVENT!", roomCode, user);
+  try {
+    const uId = user?.userId || user?._id;
+    if (!uId) {
+      return socket.emit('error_message', 'Invalid user session.');
     }
-  });
+    
+    const room_val = await getRoom(roomCode);
+    if (!room_val) {
+      return socket.emit('join_error', 'Room nahi mila! OTP re-check karein.');
+    }
+    
+    const dbUser = await User.findById(uId);
+    if (!dbUser) {
+      return socket.emit('error_message', 'User account not found.');
+    }
+
+    // Safe extraction: Check both betAmount and alternate keys if any
+    const rawBet = room_val.betAmount !== undefined ? room_val.betAmount : room_val.bet;
+    const userScore = Number(dbUser.score || 0);
+    const betAmount = Number(rawBet || 0);
+
+    console.log(`🔍 Full Room Object Retrieved:`, room_val);
+    console.log(`🔍 Checking Balance -> User Score: ${userScore}, Room Bet Amount: ${betAmount}`);
+
+    // Agar room ka bet amount valid nahi hai
+    if (betAmount <= 0) {
+      return socket.emit('join_error', 'Room bet configuration error!');
+    }
+
+    // Agar user ka score bet amount se kam hai
+    if (userScore < betAmount) {
+      // 1. Joiner ko error bhejo taaki uska UI room me enter na ho
+      socket.emit("join_error", `Insufficient balance! (your score: ${userScore}, Required: ${betAmount})`);
+      
+      // 2. Room ke sabhi users ko warning broadcast karo
+      io.to(roomCode).emit('bid_warning', {
+        message: `The joiner (${dbUser.firstname}) has insufficient balance (${userScore} vs ${betAmount}). we can't start the match.`,
+      });
+
+      return; // Yahin execution rok do, aage joinRoom execute nahi hoga!
+    }
+
+    // Agar balance sufficient hai tabhi aage badhega
+    const result = await joinRoom(roomCode, dbUser);
+    if (result.error) {
+      return socket.emit('error_message', result.error);
+    }
+
+    const room = result.room;
+    if (String(room.host?.userId || room.host?._id) === String(uId)) {
+      room.host.socketId = socket.id;
+    } else if (room.guest) {
+      room.guest.socketId = socket.id;
+    }
+
+    await updateRoom(room);
+    socket.join(room.roomCode);
+    io.to(room.roomCode).emit('player_joined', room);
+    console.log(`👤 User ${dbUser.firstname} joined room: ${room.roomCode}`);
+
+  } catch (err) {
+    console.error('Error joining room:', err);
+    socket.emit('error_message', 'Room join karne mein issue aaya!');
+  }
+});
 
   // 3. START BATTLE & FETCH RANDOM PROBLEM FROM MONGODB
   socket.on('start_battle', async ({ roomCode }) => {
@@ -137,38 +170,52 @@ module.exports = (io, socket) => {
   });
 
   // 5. SUBMIT SOLUTION & WINNER CALCULATION
- // 5. SUBMIT SOLUTION & WINNER CALCULATION (With Safe Termination Buffer)
- socket.on('submit_solution', async ({ roomCode, userId, isPassed, passedCases, totalCases }) => {
+// 5. SUBMIT SOLUTION & WINNER CALCULATION
+socket.on('submit_solution', async ({ roomCode, userId, isPassed, passedCases, totalCases }) => {
   try {
     if (isPassed) {
       const room = await getRoom(roomCode);
-      const betAmount = room?.betAmount || 50;
+      if (!room || room.status === 'COMPLETED') return;
 
-      console.log(`🎯 Correct solution submitted by User ${userId} in Room: ${roomCode}`);
+      room.status = 'COMPLETED';
+      await updateRoom(room);
 
-      // 1. Sabhi functionalities intact: Winner Declare karke Battle Over broadcast karo
+      const betAmount = Number(room.betAmount) || 10;
+      const winnerId = String(userId);
+      
+      const hostId = String(room.host?.userId || room.host?._id);
+      const guestId = room.guest ? String(room.guest?.userId || room.guest?._id) : null;
+
+      // Sahi loser id select karo
+      const loserId = hostId === winnerId ? guestId : hostId;
+
+      console.log(`🎯 Winner: ${winnerId} | Loser: ${loserId} | Bet: ${betAmount}`);
+
+      if (!loserId) {
+        console.error("❌ Loser ID not found in room! Guest might be missing.");
+        return;
+      }
+
+      // Score update call
+      await handleBattleEnd(room._id || room.id, winnerId, loserId, betAmount);
+
       io.to(roomCode).emit('battle_over', {
         winnerId: userId,
         message: 'Match Over! Problem Solved.',
         betAmount
       });
 
-      // 2. Safe Room Termination/Cleanup (2-Second Buffer)
-      // Isse socket event reliably dono users tak pahunch jayega bina room ke instant delete hue
+      // Cleanup
       setTimeout(async () => {
         try {
           await removeRoom(roomCode);
-          if (redisClient) {
-            await redisClient.del(`room:${roomCode}`);
-          }
-          console.log(`🧹 Room ${roomCode} successfully cleaned up after battle conclusion.`);
-        } catch (cleanupErr) {
-          console.error(`Error cleaning up room ${roomCode}:`, cleanupErr);
+          if (redisClient) await redisClient.del(`room:${roomCode}`);
+        } catch (err) {
+          console.error('Cleanup error:', err);
         }
-      }, 2000);
+      }, 2500);
 
     } else {
-      // Agar testcase fail hua toh baseline attempt broadcast karo
       socket.to(roomCode).emit('opponent_submission_attempt', { passedCases, totalCases });
     }
   } catch (err) {
