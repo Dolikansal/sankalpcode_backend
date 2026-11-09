@@ -64,8 +64,6 @@ module.exports = (io, socket) => {
     }
   });
 
-  // 2. JOIN ROOM
-// 2. JOIN ROOM
 socket.on('join_room', async ({ roomCode, user }) => {
   console.log("🔥 BACKEND RECEIVED join_room EVENT!", roomCode, user);
   try {
@@ -169,53 +167,43 @@ socket.on('join_room', async ({ roomCode, user }) => {
     socket.to(roomCode).emit('opponent_code_update', { code, language });
   });
 
-  // 5. SUBMIT SOLUTION & WINNER CALCULATION
 // 5. SUBMIT SOLUTION & WINNER CALCULATION
+// Battlesocket.js ke andar 'submit_solution' event mein yeh likhein:
 socket.on('submit_solution', async ({ roomCode, userId, isPassed, passedCases, totalCases }) => {
   try {
     if (isPassed) {
       const room = await getRoom(roomCode);
-      if (!room || room.status === 'COMPLETED') return;
-
-      room.status = 'COMPLETED';
-      await updateRoom(room);
+      if (!room) return;
 
       const betAmount = Number(room.betAmount) || 10;
       const winnerId = String(userId);
-      
       const hostId = String(room.host?.userId || room.host?._id);
       const guestId = room.guest ? String(room.guest?.userId || room.guest?._id) : null;
-
-      // Sahi loser id select karo
       const loserId = hostId === winnerId ? guestId : hostId;
 
-      console.log(`🎯 Winner: ${winnerId} | Loser: ${loserId} | Bet: ${betAmount}`);
+      if (!loserId) return;
 
-      if (!loserId) {
-        console.error("❌ Loser ID not found in room! Guest might be missing.");
-        return;
+      // Agar pehle se completed nahi hai tabhi score update karo
+      if (room.status !== 'COMPLETED') {
+        room.status = 'COMPLETED';
+        await updateRoom(room);
+        await handleBattleEnd(room._id || room.id, winnerId, loserId, betAmount);
       }
 
-      // Score update call
-      await handleBattleEnd(room._id || room.id, winnerId, loserId, betAmount);
-
+      // 🌟 YAHAN BADLAV KAREIN: io.to(roomCode) ka use karein taaki room ke DONO users ko event mile
       io.to(roomCode).emit('battle_over', {
         winnerId: userId,
         message: 'Match Over! Problem Solved.',
         betAmount
       });
 
-      // Cleanup
+      // 3 second ka delay dekar room terminate kar do
       setTimeout(async () => {
-        try {
-          await removeRoom(roomCode);
-          if (redisClient) await redisClient.del(`room:${roomCode}`);
-        } catch (err) {
-          console.error('Cleanup error:', err);
-        }
-      }, 2500);
+        await terminateRoom(roomCode, 'Match Over! Problem Solved.');
+      }, 3000);
 
     } else {
+      // Agar fail ho gaya, toh sirf opponent ko bhej sakte hain
       socket.to(roomCode).emit('opponent_submission_attempt', { passedCases, totalCases });
     }
   } catch (err) {
@@ -223,32 +211,36 @@ socket.on('submit_solution', async ({ roomCode, userId, isPassed, passedCases, t
   }
 });
 
-  // 6. MANUAL LEAVE MATCH HANDLER
-  socket.on('leave_room', async ({ roomCode, userId }) => {
-    console.log(`🚪 User ${userId} requested manual exit from Room: ${roomCode}`);
+// battlesocket.js ke andar:
+socket.on('leave_room', async ({ roomCode, userId }) => {
+  try {
+    const room = await getRoom(roomCode);
+    if (!room) {
+      socket.leave(roomCode);
+      return;
+    }
+    // Room ke dono users ko match close/terminate ka signal bhejo
     await terminateRoom(roomCode, 'Opponent left the match. Battle terminated!');
-  });
+  } catch (err) {
+    console.error('Error in leave_room:', err);
+  }
+});
 
-  // 7. SINGLE DISCONNECTING HANDLER (Tab close / Window Close)
-  socket.on('disconnecting', async () => {
-    try {
-      const rooms = Array.from(socket.rooms);
-      for (const roomCode of rooms) {
-        if (roomCode !== socket.id) {
-          // Socket room context retrieve
-          const room = await getRoom(roomCode);
-          
-          // Sirf tab terminate karein jab battle actually 'IN_PROGRESS' mein ho
-          // Aur disconnect real player loss ka ho, temporary reconnect na ho
-          if (room) {
-            console.log(`⚠️ Socket ${socket.id} disconnecting from active room ${roomCode}`);
-            await terminateRoom(roomCode, 'Opponent disconnected. Match terminated!');
-          }
+// disconnecting me:
+socket.on('disconnecting', async () => {
+  try {
+    const rooms = Array.from(socket.rooms);
+    for (const roomCode of rooms) {
+      if (roomCode !== socket.id) {
+        const room = await getRoom(roomCode);
+        // Sirf tab terminate karein jab battle 'IN_PROGRESS' ho
+        if (room && room.status === 'IN_PROGRESS') {
+          await terminateRoom(roomCode, 'Opponent disconnected. Match terminated!');
         }
       }
-    } catch (err) {
-      console.error('Error on socket disconnecting:', err);
     }
-  });
-
+  } catch (err) {
+    console.error('Error on socket disconnecting:', err);
+  }
+});
 };

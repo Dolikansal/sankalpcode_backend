@@ -2,6 +2,7 @@ const problemmodel = require('../models/problem');
 const submission = require('../models/submission');
 const user = require('../models/user');
 const Room = require('../models/battle');
+const {io} = require('../socket/battlesocket');
 const {getlanguagebyid , submitbatch ,submittoken} = require('../utils/problemutility');
 const { getRoom, updateRoom, removeRoom } = require('../utils/battleroom');
 const submitcode = async(req , res)=>{
@@ -119,7 +120,26 @@ const submitcode = async(req , res)=>{
                         }
 
                         console.log(`🏆 Battle API Win -> Winner: ${winnerId} (+${betAmount}), Loser: ${loserId} (-${betAmount})`);
-                        
+                        try {
+                            const ioInstance = req.app.get('io');
+                            if (ioInstance && roomCode) {
+                                console.log(`📢 Broadcasting match_closed to room: ${roomCode}`);
+                                
+                                // Room ke dono users ko match close ka signal bhejo
+                                ioInstance.to(roomCode).emit('match_closed', {
+                                    message: 'Match Over! Problem solved by opponent.'
+                                });
+
+                                // Room ke saare sockets ko room se bahar nikal do
+                                ioInstance.in(roomCode).fetchSockets().then(roomSockets => {
+                                    for (const s of roomSockets) {
+                                        s.leave(roomCode);
+                                    }
+                                });
+                            }
+                        } catch (socketErr) {
+                            console.error("❌ Error emitting socket event:", socketErr);
+                        }
                         // Redis Room cleanup
                         await removeRoom(roomCode);
                     }

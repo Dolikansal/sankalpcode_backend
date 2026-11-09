@@ -49,6 +49,7 @@ const io = new Server(server, {
       credentials: true
     }
 });
+app.set('io', io);
   io.on('connection', (socket) => {
     console.log(`⚡ Socket Connected: ${socket.id}`);
   
